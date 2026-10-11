@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.activity;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.Dialog;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.content.BroadcastReceiver;
@@ -75,7 +76,8 @@ import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.server.RemoteServer;
 import com.github.tvbox.osc.subtitle.model.Subtitle;
 import com.github.tvbox.osc.ui.adapter.SelectDialogAdapter;
-import com.github.tvbox.osc.ui.dialog.DanmuSettingDialog;
+import com.github.tvbox.osc.ui.dialog.DanmuMenuDialog;
+import com.github.tvbox.osc.ui.dialog.SearchDanmuDialog;
 import com.github.tvbox.osc.ui.dialog.SearchSubtitleDialog;
 import com.github.tvbox.osc.ui.dialog.SelectDialog;
 import com.github.tvbox.osc.ui.dialog.SubtitleDialog;
@@ -168,6 +170,12 @@ public class PlayActivity extends BaseActivity {
     private DanmakuView mDanmuView;
     private DanmakuContext mDanmakuContext;
     private String danmuText;
+    private String sourceDanmuText;
+    private volatile int danmuGeneration;
+    private boolean manualDanmuSelection;
+    private boolean manualDanmuLoading;
+    private volatile int danmuRenderGeneration;
+    private Dialog activeDanmuDialog;
 
     @Override
     protected int getLayoutResID() {
@@ -210,21 +218,44 @@ public class PlayActivity extends BaseActivity {
         maxLines.put(BaseDanmaku.TYPE_FIX_BOTTOM, maxLine);
         mDanmakuContext.setMaximumLines(maxLines).setScrollSpeedFactor(speed).setDanmakuTransparency(alpha).setScaleTextSize(sizeScale);
         mDanmakuContext.setDanmakuStyle(IDisplayer.DANMAKU_STYLE_STROKEN, 3).setDanmakuMargin(8);
-        if (reload){
-            if (executorService != null){
-                executorService.shutdownNow();
-                executorService = null;
+        if (reload) {
+            if (mDanmuView == null) return;
+            final int generation = ++danmuRenderGeneration;
+            stopDanmuRenderExecutor();
+            if (!HawkUtils.getDanmuOpen() || TextUtils.isEmpty(danmuText)) {
+                mDanmuView.release();
+                mDanmuView.setVisibility(View.GONE);
+                if (mController != null) mController.setHasDanmu(false);
+                return;
             }
+            final String content = danmuText;
             executorService = Executors.newSingleThreadExecutor();
             executorService.execute(() -> {
-                mDanmuView.release();
-                mDanmuView.prepare(new Parser(danmuText), mDanmakuContext);
-                App.post(()->{
-                    if(mVideoView!=null && mVideoView.isPlaying()){
-                        mDanmuView.seekTo(mVideoView.getCurrentPosition());
-                    }
-                });
+                try {
+                    Parser parser = new Parser(content);
+                    App.post(() -> {
+                        if (generation != danmuRenderGeneration || mDanmuView == null
+                                || !HawkUtils.getDanmuOpen()) return;
+                        mDanmuView.release();
+                        mDanmuView.prepare(parser, mDanmakuContext);
+                        mDanmuView.setVisibility(View.VISIBLE);
+                        if (mController != null) mController.setHasDanmu(true);
+                        if (mVideoView != null) {
+                            mDanmuView.seekTo(mVideoView.getCurrentPosition());
+                            if (!mVideoView.isPlaying()) mDanmuView.pause();
+                        }
+                    });
+                } catch (Throwable ignored) {
+                    return;
+                }
             });
+        }
+    }
+
+    private void stopDanmuRenderExecutor() {
+        if (executorService != null) {
+            executorService.shutdownNow();
+            executorService = null;
         }
     }
     private void initView() {
@@ -286,8 +317,7 @@ public class PlayActivity extends BaseActivity {
 
             @Override
             public void showDanmuSetting() {
-                DanmuSettingDialog dialog = new DanmuSettingDialog(PlayActivity.this, mDanmuView);
-                dialog.show();
+                showDanmuMenu();
             }
 
             @Override
@@ -968,7 +998,10 @@ public class PlayActivity extends BaseActivity {
         public void onChanged(JSONObject info) {
             if (info != null) {
                 try {
-                    progressKey = info.optString("proKey", null);
+                    String responseProgressKey = info.optString("proKey", null);
+                    if (!TextUtils.isEmpty(progressKey) && !TextUtils.isEmpty(responseProgressKey)
+                            && !progressKey.equals(responseProgressKey)) return;
+                    if (!TextUtils.isEmpty(responseProgressKey)) progressKey = responseProgressKey;
                     boolean parse = info.optString("parse", "1").equals("1");
                     boolean jx = info.optString("jx", "0").equals("1");
                     playSubtitle = info.optString("subt", /*"https://dash.akamaized.net/akamai/test/caption_test/ElephantsDream/ElephantsDream_en.vtt"*/"");
@@ -1053,16 +1086,93 @@ public class PlayActivity extends BaseActivity {
     };
 
     private void checkDanmu(String danmu) {
+        sourceDanmuText = danmu;
+        if (manualDanmuSelection || manualDanmuLoading) return;
         danmuText = danmu;
-        mDanmuView.release();
-        mDanmuView.setVisibility(TextUtils.isEmpty(danmuText) || !HawkUtils.getDanmuOpen() ? View.GONE : View.VISIBLE);
-        if (TextUtils.isEmpty(danmuText)
-                || !HawkUtils.getDanmuOpen()
-                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode())) return;
-        if (!danmuText.isEmpty()) {
-            mController.setHasDanmu(true);
-            setDanmuViewSettings(true);
+        if (mDanmuView == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) {
+            danmuRenderGeneration++;
+            stopDanmuRenderExecutor();
+            mDanmuView.release();
+            mDanmuView.setVisibility(View.GONE);
+            return;
         }
+        setDanmuViewSettings(true);
+    }
+
+    private void showDanmuMenu() {
+        String searchWord = mVodInfo == null ? "" : mVodInfo.name;
+        final int requestGeneration = danmuGeneration;
+        DanmuMenuDialog.show(this, mController, mDanmuView, searchWord, new SearchDanmuDialog.Listener() {
+            @Override
+            public void onEpisodeLoading() {
+                if (requestGeneration != danmuGeneration) return;
+                manualDanmuLoading = true;
+                danmuRenderGeneration++;
+                stopDanmuRenderExecutor();
+            }
+
+            @Override
+            public void onDanmuLoaded(String xml, String episodeTitle) {
+                if (requestGeneration != danmuGeneration) return;
+                manualDanmuSelection = true;
+                manualDanmuLoading = false;
+                danmuText = xml;
+                boolean enabled = HawkUtils.getDanmuOpen();
+                mDanmuView.setVisibility(enabled ? View.VISIBLE : View.GONE);
+                setDanmuViewSettings(true);
+                Toast.makeText(PlayActivity.this, "已加载「" + episodeTitle + "」弹幕", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onError(String message) {
+                if (requestGeneration != danmuGeneration) return;
+                manualDanmuLoading = false;
+                if (!manualDanmuSelection) danmuText = sourceDanmuText;
+                setDanmuViewSettings(true);
+                Toast.makeText(PlayActivity.this, message, Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onSelectionCancelled() {
+                if (requestGeneration != danmuGeneration) return;
+                manualDanmuLoading = false;
+                if (!manualDanmuSelection) danmuText = sourceDanmuText;
+                setDanmuViewSettings(true);
+            }
+        }, new DanmuMenuDialog.DialogHolder() {
+            @Override
+            public void setDialog(Dialog dialog) {
+                activeDanmuDialog = dialog;
+            }
+
+            @Override
+            public void clearDialog(Dialog dialog) {
+                if (activeDanmuDialog == dialog) activeDanmuDialog = null;
+            }
+        });
+    }
+
+    private void resetDanmuForPlayback() {
+        danmuGeneration++;
+        manualDanmuSelection = false;
+        manualDanmuLoading = false;
+        danmuText = "";
+        sourceDanmuText = "";
+        dismissDanmuDialog();
+        danmuRenderGeneration++;
+        stopDanmuRenderExecutor();
+        if (mDanmuView != null) {
+            mDanmuView.release();
+            mDanmuView.setVisibility(View.GONE);
+        }
+        if (mController != null) mController.setHasDanmu(false);
+    }
+
+    private void dismissDanmuDialog() {
+        Dialog dialog = activeDanmuDialog;
+        activeDanmuDialog = null;
+        if (dialog != null && dialog.isShowing()) dialog.dismiss();
     }
 
     private void initData() {
@@ -1287,12 +1397,12 @@ public class PlayActivity extends BaseActivity {
 
     @Override
     protected void onDestroy() {
+        danmuGeneration++;
+        danmuRenderGeneration++;
+        dismissDanmuDialog();
         super.onDestroy();
         EventBus.getDefault().unregister(this);
-        if(executorService!=null){
-            executorService.shutdownNow();
-            executorService = null;
-        }
+        stopDanmuRenderExecutor();
         //手动注销
         sourceViewModel.playResult.removeObserver(mObserverPlayResult);
         if (mVideoView != null) {
@@ -1402,6 +1512,7 @@ public class PlayActivity extends BaseActivity {
     }
 
     public void play(boolean reset) {
+        resetDanmuForPlayback();
         VodInfo.VodSeries vs = mVodInfo.seriesMap.get(mVodInfo.playFlag).get(mVodInfo.getplayIndex());
         EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_REFRESH, mVodInfo.getplayIndex()));
         EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_REFRESH_NOTIFY, mVodInfo.name + "&&" + vs.name));

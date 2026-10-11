@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="@dimen/vs_720"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/shape_dialog_bg_main"
+        android:orientation="vertical"
+        android:padding="@dimen/vs_30">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="@dimen/vs_20"
+            android:text="弹幕 API 源"
+            android:textColor="@color/color_FFFFFF"
+            android:textSize="@dimen/ts_26"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="@dimen/vs_15"
+            android:text="填写 danmu_api 服务地址。若服务端启用了 Token 验证，请按服务端配置将 Token 放在路径中，例如 https://example.com/your-token。"
+            android:textColor="@color/color_FFFFFF"
+            android:textSize="@dimen/ts_20" />
+
+        <EditText
+            android:id="@+id/inputDanmuApi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/input_search"
+            android:hint="https://example.com/87654321"
+            android:imeOptions="actionDone"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:padding="@dimen/vs_15"
+            android:textColor="@color/color_FFFFFF"
+            android:textColorHint="@color/color_6CFFFFFF"
+            android:textSize="@dimen/ts_22" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="@dimen/vs_20"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnDanmuApiClear"
+                android:layout_width="@dimen/vs_140"
+                android:layout_height="@dimen/vs_50"
+                android:layout_marginEnd="@dimen/vs_10"
+                android:background="@drawable/button_dialog_vod"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="清除"
+                android:textColor="@color/color_FFFFFF"
+                android:textSize="@dimen/ts_22" />
+
+            <TextView
+                android:id="@+id/btnDanmuApiSave"
+                android:layout_width="@dimen/vs_140"
+                android:layout_height="@dimen/vs_50"
+                android:background="@drawable/button_dialog_vod"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="保存"
+                android:textColor="@color/color_FFFFFF"
+                android:textSize="@dimen/ts_22" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

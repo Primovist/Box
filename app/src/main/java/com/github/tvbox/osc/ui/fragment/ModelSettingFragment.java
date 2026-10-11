@@ -27,6 +27,7 @@ import com.github.tvbox.osc.ui.dialog.AboutDialog;
 import com.github.tvbox.osc.ui.dialog.ApiDialog;
 import com.github.tvbox.osc.ui.dialog.ApiHistoryDialog;
 import com.github.tvbox.osc.ui.dialog.BackupDialog;
+import com.github.tvbox.osc.ui.dialog.DanmuSourceDialog;
 import com.github.tvbox.osc.ui.dialog.HomeIconDialog;
 import com.github.tvbox.osc.ui.dialog.MediaSettingDialog;
 import com.github.tvbox.osc.ui.dialog.ResetDialog;
@@ -35,6 +36,7 @@ import com.github.tvbox.osc.ui.dialog.XWalkInitDialog;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.HistoryHelper;
+import com.github.tvbox.osc.util.HawkUtils;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.PlayerHelper;
 import com.lzy.okgo.OkGo;
@@ -77,6 +79,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvScale;
     private TextView tvPlay;
     private TextView tvVideoPurifyText;
+    private TextView tvDanmuApi;
 
     // System Section
     private TextView tvLocale;
@@ -126,6 +129,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvPlay.setText(PlayerHelper.getPlayerName(Hawk.get(HawkConfig.PLAY_TYPE, 0)));
         tvVideoPurifyText = findViewById(R.id.tvVideoPurifyText);
         tvVideoPurifyText.setText(Hawk.get(HawkConfig.VIDEO_PURIFY, true) ? "开启" : "关闭");
+        tvDanmuApi = findViewById(R.id.tvDanmuApi);
+        String danmuApiUrl = HawkUtils.getDanmuApiUrl();
+        tvDanmuApi.setText(danmuApiUrl.isEmpty() ? "未设置" : danmuApiUrl);
         // System Section
         tvLocale = findViewById(R.id.tvLocale);
         tvLocale.setText(getLocaleView(Hawk.get(HawkConfig.HOME_LOCALE, 0)));
@@ -500,6 +506,13 @@ public class ModelSettingFragment extends BaseLazyFragment {
             FastClickCheckUtil.check(v);
             Hawk.put(HawkConfig.VIDEO_PURIFY, !Hawk.get(HawkConfig.VIDEO_PURIFY, true));
             tvVideoPurifyText.setText(Hawk.get(HawkConfig.VIDEO_PURIFY, true) ? "开启" : "关闭");
+        });
+
+        findViewById(R.id.llDanmuApi).setOnClickListener(v -> {
+            FastClickCheckUtil.check(v);
+            DanmuSourceDialog dialog = new DanmuSourceDialog(mActivity, url ->
+                    tvDanmuApi.setText(url.isEmpty() ? "未设置" : url));
+            dialog.show();
         });
 
         // 3. SYSTEM Configuration -------------------------------------------------------------- //

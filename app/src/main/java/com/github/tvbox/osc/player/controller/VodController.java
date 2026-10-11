@@ -1005,6 +1005,7 @@ public class VodController extends BaseController {
         });
 
         mDanmuSetting.setOnClickListener(view -> {
+            pauseBottomAutoHide();
             listener.showDanmuSetting();
         });
 
@@ -1636,10 +1637,20 @@ public class VodController extends BaseController {
     }
 
     public void updateDanmuBtn(){
-        if(hasDanmu){
-            mDanmuSetting.setVisibility(VISIBLE);
-        }else{
-            mDanmuSetting.setVisibility(GONE);
+        // Keep the entry visible so users can search/configure a source before a
+        // danmu file has been attached to the current episode.
+        mDanmuSetting.setVisibility(VISIBLE);
+    }
+
+    public void pauseBottomAutoHide() {
+        mHandler.removeCallbacks(mHideBottomRunnable);
+    }
+
+    public void resumeBottomAutoHide() {
+        if (isBottomVisible()) {
+            mDanmuSetting.requestFocus();
+            mHandler.removeCallbacks(mHideBottomRunnable);
+            mHandler.postDelayed(mHideBottomRunnable, 8000);
         }
     }
 

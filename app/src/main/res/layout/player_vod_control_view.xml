@@ -1064,7 +1064,7 @@
 
                 <LinearLayout
                     android:id="@+id/ll_danmu_setting"
-                    android:layout_width="@dimen/vs_60"
+                    android:layout_width="@dimen/vs_90"
                     android:layout_height="@dimen/vs_60"
                     android:layout_gravity="center"
                     android:layout_marginStart="@dimen/vs_6"
@@ -1081,6 +1081,14 @@
                         android:layout_height="@dimen/vs_35"
                         android:layout_gravity="center"
                         android:src="@drawable/v_danmu" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/vs_4"
+                        android:text="弹幕"
+                        android:textColor="@color/color_FFFFFF"
+                        android:textSize="@dimen/ts_18" />
                 </LinearLayout>
 	
 	            <LinearLayout

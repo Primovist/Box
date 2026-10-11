@@ -50,12 +50,18 @@ public class Parser extends BaseDanmakuParser {
     protected Danmakus parse() {
         Danmakus result = new Danmakus(IDanmakus.ST_BY_TIME);
         for (Danmu.Data data : danmu.getData()) {
-            String[] values = data.getParam().split(",");
-            if (values.length < 4) continue;
-            setParam(values);
-            setText(data.getText());
-            synchronized (result.obtainSynchronizer()) {
-                result.addItem(item);
+            try {
+                String[] values = data.getParam().split(",");
+                if (values.length < 4) continue;
+                setParam(values);
+                if (item == null) continue;
+                setText(data.getText());
+                if (item == null) continue;
+                synchronized (result.obtainSynchronizer()) {
+                    result.addItem(item);
+                }
+            } catch (Throwable ignored) {
+                item = null;
             }
         }
         return result;

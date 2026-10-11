@@ -1,4 +1,4 @@
-name: Build Release APK
+name: Build and Publish Release APKs
 
 on:
   push:
@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,26 +25,52 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.8'
+
       - name: Verify signing key
         run: echo "d467eb24075d24a0349e89121b02fa5d17225303f8ecdd0874ca4990fa6b01fa  .github/workflows/TVBoxOSC.jks" | sha256sum --check
 
-      - name: Build arm64 generic Java Release APK
+      - name: Build all release variants
+        shell: bash
         run: |
+          set -euo pipefail
           chmod +x gradlew
           touch local.properties
-          ./gradlew assembleArm64GenericNormalRelease --no-daemon --build-cache --stacktrace \
+
+          version_code=$((GITHUB_RUN_NUMBER + 1))
+          version_name="1.0.${GITHUB_RUN_NUMBER}"
+          echo "TVBOX_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          echo "TVBOX_VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+
+          ./gradlew assembleRelease --no-daemon --build-cache --stacktrace \
+            -PTVBOX_VERSION_CODE="$version_code" \
+            -PTVBOX_VERSION_NAME="$version_name" \
             -PTVBOX_RELEASE_STORE_FILE=.github/workflows/TVBoxOSC.jks \
             -PTVBOX_RELEASE_STORE_PASSWORD=TVBoxOSC \
             -PTVBOX_RELEASE_KEY_ALIAS=TVBoxOSC \
             -PTVBOX_RELEASE_KEY_PASSWORD=TVBoxOSC
 
-      - name: Verify and prepare APK
+      - name: Verify and prepare all APKs
         shell: bash
         run: |
           set -euo pipefail
-          apk_path="$(find app/build/outputs/apk -type f -name 'TVBox_release-arm64-generic-java.apk' -print -quit)"
-          if [[ -z "$apk_path" ]]; then
-            echo "Expected arm64 generic Java APK was not produced" >&2
+
+          apk_root="app/build/outputs/apk"
+          expected_apks=(
+            TVBox_release-armeabi-generic-java.apk
+            TVBox_release-armeabi-generic-python.apk
+            TVBox_release-armeabi-hisense-java.apk
+            TVBox_release-armeabi-hisense-python.apk
+            TVBox_release-arm64-generic-java.apk
+            TVBox_release-arm64-generic-python.apk
+            TVBox_release-arm64-hisense-java.apk
+            TVBox_release-arm64-hisense-python.apk
+          )
+          release_apk_count="$(find "$apk_root" -type f -name 'TVBox_release-*.apk' | wc -l | tr -d '[:space:]')"
+          if [[ "$release_apk_count" != "${#expected_apks[@]}" ]]; then
+            echo "Expected ${#expected_apks[@]} release APKs, found $release_apk_count" >&2
             exit 1
           fi
 
@@ -57,32 +85,210 @@ jobs:
           [[ -x "$apksigner" && -x "$aapt" ]]
 
           mkdir -p artifact
-          cp "$apk_path" artifact/
-          apk="artifact/$(basename "$apk_path")"
-          signer_output="$("$apksigner" verify --verbose --print-certs "$apk" 2>&1)"
-          printf '%s\n' "$signer_output"
-          signer_digest="$(printf '%s\n' "$signer_output" | sed -n 's/.*SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           expected_digest='4B9421DE6D46778F6280B180179413FA6973845F0A0132C00F6800C06464E051'
-          if [[ "$signer_digest" != "$expected_digest" ]]; then
-            echo "APK signing certificate does not match the original release certificate" >&2
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "versionName=$TVBOX_VERSION_NAME"
+            echo "versionCode=$TVBOX_VERSION_CODE"
+            echo "certificateSha256=$expected_digest"
+            echo "variants:"
+          } > artifact/build-info.txt
+
+          for filename in "${expected_apks[@]}"; do
+            matches=()
+            while IFS= read -r -d '' candidate; do
+              matches+=("$candidate")
+            done < <(find "$apk_root" -type f -name "$filename" -print0)
+
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "Expected exactly one $filename, found ${#matches[@]}" >&2
+              exit 1
+            fi
+
+            apk_path="${matches[0]}"
+            variant="${filename#TVBox_release-}"
+            variant="${variant%.apk}"
+            IFS='-' read -r abi brand mode <<< "$variant"
+            if [[ "$abi" == "armeabi" ]]; then
+              expected_abi='armeabi-v7a'
+            else
+              expected_abi='arm64-v8a'
+            fi
+            if [[ "$brand" == "hisense" ]]; then
+              expected_app_id='com.github.hisense.osc.tk'
+            else
+              expected_app_id='com.github.tvbox.osc.tk'
+            fi
+
+            native_abis="$(unzip -Z1 "$apk_path" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)"
+            if [[ "$native_abis" != "$expected_abi" ]]; then
+              echo "$filename contains native ABIs '$native_abis', expected '$expected_abi'" >&2
+              exit 1
+            fi
+
+            signer_output="$("$apksigner" verify --verbose --print-certs "$apk_path" 2>&1)"
+            printf '%s\n' "$signer_output"
+            signer_digest="$(printf '%s\n' "$signer_output" | sed -n 's/.*SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            if [[ "$signer_digest" != "$expected_digest" ]]; then
+              echo "$filename was not signed with the original release certificate" >&2
+              exit 1
+            fi
+
+            badging="$("$aapt" dump badging "$apk_path")"
+            package_line="$(printf '%s\n' "$badging" | grep -m 1 '^package:')"
+            if [[ "$package_line" != *"name='$expected_app_id'"* \
+                || "$package_line" != *"versionCode='$TVBOX_VERSION_CODE'"* \
+                || "$package_line" != *"versionName='$TVBOX_VERSION_NAME'"* ]]; then
+              echo "$filename has unexpected package/version metadata: $package_line" >&2
+              exit 1
+            fi
+
+            cp "$apk_path" "artifact/$filename"
+            printf '  %s abi=%s brand=%s mode=%s applicationId=%s\n' \
+              "$filename" "$expected_abi" "$brand" "$mode" "$expected_app_id" \
+              >> artifact/build-info.txt
+          done
+
+          (cd artifact && sha256sum "${expected_apks[@]}" > SHA256SUMS)
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: box-release-${{ github.run_number }}
+          path: artifact/*
+          if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: tvbox-release-${{ github.repository }}-${{ github.run_number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: box-release-${{ github.run_number }}
+          path: artifact
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          version_code=$((GITHUB_RUN_NUMBER + 1))
+          version_name="1.0.${GITHUB_RUN_NUMBER}"
+          release_tag="v${version_name}"
+          expected_assets=(
+            TVBox_release-armeabi-generic-java.apk
+            TVBox_release-armeabi-generic-python.apk
+            TVBox_release-armeabi-hisense-java.apk
+            TVBox_release-armeabi-hisense-python.apk
+            TVBox_release-arm64-generic-java.apk
+            TVBox_release-arm64-generic-python.apk
+            TVBox_release-arm64-hisense-java.apk
+            TVBox_release-arm64-hisense-python.apk
+            SHA256SUMS
+            build-info.txt
+          )
+
+          for asset in "${expected_assets[@]}"; do
+            if [[ ! -f "artifact/$asset" ]]; then
+              echo "Release asset is missing: $asset" >&2
+              exit 1
+            fi
+          done
+
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          {
+            printf 'Automated release from commit %s.\n\n' "$GITHUB_SHA"
+            printf 'Version: %s (versionCode %s)\n\n' "$version_name" "$version_code"
+            printf 'APK variants: armeabi-v7a and arm64-v8a, generic and Hisense, Java and Python.\n'
+          } > "$notes_file"
+
+          lookup_tag_commit() {
+            local ref_error_file
+            ref_error_file="$(mktemp)"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release_tag" >/dev/null 2>"$ref_error_file"; then
+              rm -f "$ref_error_file"
+              gh api "repos/$GITHUB_REPOSITORY/commits/$release_tag" --jq '.sha'
+            elif grep -q 'HTTP 404' "$ref_error_file"; then
+              rm -f "$ref_error_file"
+            else
+              cat "$ref_error_file" >&2
+              rm -f "$ref_error_file"
+              return 1
+            fi
+          }
+
+          all_releases="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          release_json="$(jq -c --arg tag "$release_tag" '[.[][] | select(.tag_name == $tag)] | first // empty' <<< "$all_releases")"
+          tag_commit="$(lookup_tag_commit)"
+
+          if [[ -n "$tag_commit" && "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "Tag $release_tag points to $tag_commit, not the APK source commit $GITHUB_SHA" >&2
             exit 1
           fi
 
-          badging="$("$aapt" dump badging "$apk")"
-          printf '%s\n' "$badging" | grep -q "package: name='com.github.tvbox.osc.tk' versionCode='1'"
-          printf '%s\n' "$badging" | head -n 1
-          (cd artifact && sha256sum "$(basename "$apk_path")" > SHA256SUMS)
-          {
-            echo "commit=$(git rev-parse HEAD)"
-            echo "applicationId=com.github.tvbox.osc.tk"
-            echo "versionCode=1"
-            echo "variant=arm64-generic-java-release"
-            echo "certificateSha256=$signer_digest"
-          } > artifact/build-info.txt
+          if [[ -z "$release_json" ]]; then
+            release_json="$(jq -n \
+              --arg tag "$release_tag" \
+              --arg target "$GITHUB_SHA" \
+              --arg title "$version_name" \
+              --rawfile body "$notes_file" \
+              '{tag_name:$tag,target_commitish:$target,name:$title,body:$body,draft:true,prerelease:false,make_latest:"false"}' \
+              | gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input -)"
+          fi
 
-      - name: Upload Release APK artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: box-arm64-generic-java-release
-          path: artifact/*
-          if-no-files-found: error
+          release_id="$(jq -r '.id' <<< "$release_json")"
+          is_draft="$(jq -r '.draft' <<< "$release_json")"
+          draft_target="$(jq -r '.target_commitish // empty' <<< "$release_json")"
+          if [[ "$is_draft" != "true" ]]; then
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Published release $release_tag does not point to the APK source commit" >&2
+              exit 1
+            fi
+            for asset in "${expected_assets[@]}"; do
+              if ! jq -e --arg asset "$asset" 'any(.assets[]?; .name == $asset)' <<< "$release_json" >/dev/null; then
+                echo "Published release $release_tag is missing $asset; it was left untouched" >&2
+                exit 1
+              fi
+            done
+            echo "Release $release_tag is already published with all expected assets"
+            exit 0
+          fi
+
+          if [[ -z "$tag_commit" && "$draft_target" != "$GITHUB_SHA" ]]; then
+            echo "Draft release $release_tag targets $draft_target, not the APK source commit $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          gh release upload "$release_tag" artifact/* --clobber --repo "$GITHUB_REPOSITORY"
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          for asset in "${expected_assets[@]}"; do
+            if ! jq -e --arg asset "$asset" 'any(.assets[]?; .name == $asset)' <<< "$release_json" >/dev/null; then
+              echo "Release upload did not include $asset" >&2
+              exit 1
+            fi
+          done
+
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -f 'make_latest=legacy' \
+            -f "target_commitish=$GITHUB_SHA"
+
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          if [[ "$(jq -r '.draft' <<< "$release_json")" != "false" ]]; then
+            echo "Release $release_tag was not published" >&2
+            exit 1
+          fi
+          published_tag_commit="$(lookup_tag_commit)"
+          if [[ "$published_tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "Published tag $release_tag points to $published_tag_commit, not $GITHUB_SHA" >&2
+            exit 1
+          fi

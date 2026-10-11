@@ -7,6 +7,9 @@ def static buildTime() {
     return new Date().format("yyyyMMdd_HHmm", TimeZone.getTimeZone("GMT+08:00"))
 }
 
+def appVersionCode = (project.findProperty("TVBOX_VERSION_CODE") ?: "1").toString().toInteger()
+def appVersionName = project.findProperty("TVBOX_VERSION_NAME")?.toString() ?: "1.0.".concat(buildTime())
+
 def releaseStoreFile = project.findProperty("TVBOX_RELEASE_STORE_FILE") ?: ".github/workflows/TVBoxOSC.jks"
 def releaseStorePassword = project.findProperty("TVBOX_RELEASE_STORE_PASSWORD") ?: "TVBoxOSC"
 def releaseKeyAlias = project.findProperty("TVBOX_RELEASE_KEY_ALIAS") ?: "TVBoxOSC"
@@ -18,8 +21,8 @@ android {
     defaultConfig {
         applicationId 'com.github.tvbox.osc.tk'
         targetSdkVersion 28
-        versionCode 1
-        versionName "1.0.".concat(buildTime())
+        versionCode appVersionCode
+        versionName appVersionName
         multiDexEnabled true
         //设置room的Schema的位置
         javaCompileOptions {

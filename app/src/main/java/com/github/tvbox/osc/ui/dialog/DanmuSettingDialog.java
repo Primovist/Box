@@ -43,7 +43,7 @@ public class DanmuSettingDialog extends BaseDialog {
     }
 
     private void initOnOff(){
-        Boolean defaultVal = danmakuView.isShown();
+        Boolean defaultVal = HawkUtils.getDanmuOpen();
         ArrayList<Boolean> players = new ArrayList<>();
         players.add(true);
         players.add(false);
@@ -56,6 +56,8 @@ public class DanmuSettingDialog extends BaseDialog {
                 }else{
                     danmakuView.hide();
                 }
+                HawkUtils.setDanmuOpen(value);
+                EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_SET_DANMU_SETTINGS, true));
             }
             @Override
             public String getDisplay(Boolean val) {

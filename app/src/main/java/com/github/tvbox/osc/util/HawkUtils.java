@@ -22,6 +22,15 @@ public class HawkUtils {
     private static final String DANMU_ALPHA = "danmu_alpha";
     private static final String DANMU_SIZESCALE = "danmu_sizescale";
     private static final String DANMU_COLOR = "danmu_color";
+    private static final String DANMU_API_URL = "danmu_api_url";
+
+    public static String getDanmuApiUrl() {
+        return Hawk.get(DANMU_API_URL, "");
+    }
+
+    public static void setDanmuApiUrl(String url) {
+        Hawk.put(DANMU_API_URL, url == null ? "" : url.trim());
+    }
 
     public static boolean getDanmuOpen() {
         return Hawk.get(DANMU_OPEN, true);
