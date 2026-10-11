@@ -29,6 +29,7 @@ jobs:
       - name: Build arm64 generic Java Release APK
         run: |
           chmod +x gradlew
+          touch local.properties
           ./gradlew assembleArm64GenericNormalRelease --no-daemon --build-cache --stacktrace \
             -PTVBOX_RELEASE_STORE_FILE=.github/workflows/TVBoxOSC.jks \
             -PTVBOX_RELEASE_STORE_PASSWORD=TVBoxOSC \
