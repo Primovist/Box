@@ -98,9 +98,14 @@ public class ApiDialog extends BaseDialog {
                     if (history.size() > 20)
                         history.remove(20);
                     Hawk.put(HawkConfig.API_HISTORY, history);
-                    listener.onchange(newApi);
-                    dismiss();
                 }
+                // Non-empty edited addresses override subscription values. Clear to follow the active config.
+                String oldLive = Hawk.get(HawkConfig.LIVE_URL, "");
+                String oldEPG = Hawk.get(HawkConfig.EPG_URL, "");
+                boolean liveOverride = !newLive.isEmpty() && (!newLive.equals(oldLive) || Hawk.get(HawkConfig.LIVE_URL_OVERRIDE, false));
+                boolean epgOverride = !newEPG.isEmpty() && (!newEPG.equals(oldEPG) || Hawk.get(HawkConfig.EPG_URL_OVERRIDE, false));
+                Hawk.put(HawkConfig.LIVE_URL_OVERRIDE, liveOverride);
+                Hawk.put(HawkConfig.EPG_URL_OVERRIDE, epgOverride);
                 // Capture Live input into Settings & Live History (max 20)
                 Hawk.put(HawkConfig.LIVE_URL, newLive);
                 if (!newLive.isEmpty()) {
@@ -123,6 +128,10 @@ public class ApiDialog extends BaseDialog {
                 }
                 // Capture oroxy server input into Settings
                 Hawk.put(HawkConfig.PROXY_SERVER, newProxyServer);
+                if (!newApi.isEmpty()) {
+                    listener.onchange(newApi);
+                    dismiss();
+                }
             }
         });
         findViewById(R.id.apiHistory).setOnClickListener(new View.OnClickListener() {
@@ -170,6 +179,7 @@ public class ApiDialog extends BaseDialog {
                     public void click(String liveURL) {
                         inputLive.setText(liveURL);
                         Hawk.put(HawkConfig.LIVE_URL, liveURL);
+                        Hawk.put(HawkConfig.LIVE_URL_OVERRIDE, true);
                         dialog.dismiss();
                     }
 
@@ -198,6 +208,7 @@ public class ApiDialog extends BaseDialog {
                     public void click(String epgURL) {
                         inputEPG.setText(epgURL);
                         Hawk.put(HawkConfig.EPG_URL, epgURL);
+                        Hawk.put(HawkConfig.EPG_URL_OVERRIDE, true);
                         dialog.dismiss();
                     }
 

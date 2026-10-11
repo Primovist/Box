@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.regex.Matcher;
@@ -15,48 +14,36 @@ public class TxtSubscribe {
 
     private static final Pattern NAME_PATTERN = Pattern.compile(".*,(.+?)$");
     private static final Pattern GROUP_PATTERN = Pattern.compile("group-title=\"(.*?)\"");
+    private static final Pattern CATCHUP_SOURCE_PATTERN = Pattern.compile("catchup-source=\"([^\"]*)\"", Pattern.CASE_INSENSITIVE);
 
-    public static void parse(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {
-        if (str.startsWith("#EXTM3U")) {
-            parseM3u(linkedHashMap, str);
+    public static void parse(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> channels,
+                             LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> catchupSources,
+                             String text) {
+        if (text == null) return;
+        if (text.startsWith("#EXTM3U")) {
+            parseM3u(channels, catchupSources, text);
         } else {
-            parseTxt(linkedHashMap, str);
+            parseTxt(channels, catchupSources, text);
         }
     }
 
-    private static void parseM3u(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {
-        ArrayList<String> urls;
+    private static void parseM3u(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> channels,
+                                 LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> catchupSources,
+                                 String text) {
         try {
-            BufferedReader bufferedReader = new BufferedReader(new StringReader(str));
-            LinkedHashMap<String, ArrayList<String>> channel = new LinkedHashMap<>();
-            LinkedHashMap<String, ArrayList<String>> channelTemp = channel;
+            BufferedReader reader = new BufferedReader(new StringReader(text));
             String line;
-            while ((line = bufferedReader.readLine()) != null) {
-                if (line.equals("")) continue;
-                if (line.startsWith("#EXTM3U")) continue;
-                if (line.startsWith("#EXTINF")) {
-                    String name = getStrByRegex(NAME_PATTERN, line);
-                    String group = getStrByRegex(GROUP_PATTERN, line);
-                    // 此时再读取一行，就是对应的 url 链接了
-                    String url = bufferedReader.readLine().trim();
-                    if (linkedHashMap.containsKey(group)) {
-                        channelTemp = linkedHashMap.get(group);
-                    } else {
-                        channelTemp = new LinkedHashMap<>();
-                        linkedHashMap.put(group, channelTemp);
-                    }
-                    if (null != channelTemp && channelTemp.containsKey(name)) {
-                        urls = channelTemp.get(name);
-                    } else {
-                        urls = new ArrayList<>();
-                        channelTemp.put(name, urls);
-                    }
-                    if (null != urls && !urls.contains(url)) urls.add(url);
-                }
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("#EXTINF")) continue;
+
+                String name = getStrByRegex(NAME_PATTERN, line);
+                String group = getStrByRegex(GROUP_PATTERN, line);
+                String catchupSource = getStrByRegex(CATCHUP_SOURCE_PATTERN, line);
+                String url = reader.readLine();
+                if (url != null && !url.trim().isEmpty())
+                    addSource(channels, catchupSources, group, name, url.trim(), catchupSource);
             }
-            bufferedReader.close();
-            if (channel.isEmpty()) return;
-            linkedHashMap.put("未分组", channel);
+            reader.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -65,93 +52,108 @@ public class TxtSubscribe {
     private static String getStrByRegex(Pattern pattern, String line) {
         Matcher matcher = pattern.matcher(line);
         if (matcher.find()) return matcher.group(1);
-        return pattern.pattern().equals(GROUP_PATTERN.pattern()) ? "未分组" : "未命名";
+        if (pattern == CATCHUP_SOURCE_PATTERN) return "";
+        return pattern == GROUP_PATTERN ? "未分组" : "未命名";
     }
 
-    private static void parseTxt(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {
-        ArrayList<String> arrayList;
+    private static void parseTxt(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> channels,
+                                 LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> catchupSources,
+                                 String text) {
         try {
-            BufferedReader bufferedReader = new BufferedReader(new StringReader(str));
-            String readLine = bufferedReader.readLine();
-            LinkedHashMap<String, ArrayList<String>> linkedHashMap2 = new LinkedHashMap<>();
-            LinkedHashMap<String, ArrayList<String>> linkedHashMap3 = linkedHashMap2;
-            while (readLine != null) {
-                if (readLine.trim().isEmpty()) {
-                    readLine = bufferedReader.readLine();
-                } else {
-                    String[] split = readLine.split(",", 2);
-                    if (split.length < 2) {
-                        readLine = bufferedReader.readLine();
-                    } else {
-                        if (readLine.contains("#genre#")) {
-                            String trim = split[0].trim();
-                            if (!linkedHashMap.containsKey(trim)) {
-                                linkedHashMap3 = new LinkedHashMap<>();
-                                linkedHashMap.put(trim, linkedHashMap3);
-                            } else {
-                                linkedHashMap3 = linkedHashMap.get(trim);
-                            }
-                        } else {
-                            String trim2 = split[0].trim();
-                            for (String str2 : split[1].trim().split("#")) {
-                                String trim3 = str2.trim();
-                                if (!trim3.isEmpty() && (trim3.startsWith("http") || trim3.startsWith("rtsp") || trim3.startsWith("rtmp"))) {
-                                    if (!linkedHashMap3.containsKey(trim2)) {
-                                        arrayList = new ArrayList<>();
-                                        linkedHashMap3.put(trim2, arrayList);
-                                    } else {
-                                        arrayList = linkedHashMap3.get(trim2);
-                                    }
-                                    if (!arrayList.contains(trim3)) {
-                                        arrayList.add(trim3);
-                                    }
-                                }
-                            }
-                        }
-                        readLine = bufferedReader.readLine();
-                    }
+            BufferedReader reader = new BufferedReader(new StringReader(text));
+            String group = "未分组";
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+                String[] split = line.split(",", 2);
+                if (split.length < 2) continue;
+                if (line.contains("#genre#")) {
+                    group = split[0].trim();
+                    continue;
+                }
+
+                String name = split[0].trim();
+                for (String candidate : split[1].trim().split("#")) {
+                    String url = candidate.trim();
+                    if (!url.isEmpty() && (url.startsWith("http") || url.startsWith("rtsp") || url.startsWith("rtmp")))
+                        addSource(channels, catchupSources, group, name, url, "");
                 }
             }
-            bufferedReader.close();
-            if (linkedHashMap2.isEmpty()) {
-                return;
-            }
-            linkedHashMap.put("未分组", linkedHashMap2);
-        } catch (Throwable unused) {
+            reader.close();
+        } catch (Throwable ignored) {
         }
     }
 
-    public static JsonArray live2JsonArray(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap) {
-        JsonArray jsonarr = new JsonArray();
-        for (String str : linkedHashMap.keySet()) {
-            JsonArray jsonarr2 = new JsonArray();
-            LinkedHashMap<String, ArrayList<String>> linkedHashMap2 = linkedHashMap.get(str);
-            if (!linkedHashMap2.isEmpty()) {
-                for (String str2 : linkedHashMap2.keySet()) {
-                    ArrayList<String> arrayList = linkedHashMap2.get(str2);
-                    if (!arrayList.isEmpty()) {
-                        JsonArray jsonarr3 = new JsonArray();
-                        for (int i = 0; i < arrayList.size(); i++) {
-                            jsonarr3.add(arrayList.get(i));
-                        }
-                        JsonObject jsonobj = new JsonObject();
-                        try {
-                            jsonobj.addProperty("name", str2);
-                            jsonobj.add("urls", jsonarr3);
-                        } catch (Throwable e) {
-                        }
-                        jsonarr2.add(jsonobj);
+    private static void addSource(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> channels,
+                                  LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> catchupSources,
+                                  String group, String name, String url, String catchupSource) {
+        LinkedHashMap<String, ArrayList<String>> channelGroup = channels.get(group);
+        if (channelGroup == null) {
+            channelGroup = new LinkedHashMap<>();
+            channels.put(group, channelGroup);
+        }
+        ArrayList<String> urls = channelGroup.get(name);
+        if (urls == null) {
+            urls = new ArrayList<>();
+            channelGroup.put(name, urls);
+        }
+
+        LinkedHashMap<String, ArrayList<String>> catchupGroup = catchupSources.get(group);
+        if (catchupGroup == null) {
+            catchupGroup = new LinkedHashMap<>();
+            catchupSources.put(group, catchupGroup);
+        }
+        ArrayList<String> templates = catchupGroup.get(name);
+        if (templates == null) {
+            templates = new ArrayList<>();
+            catchupGroup.put(name, templates);
+        }
+
+        int existingIndex = urls.indexOf(url);
+        if (existingIndex >= 0) {
+            while (templates.size() <= existingIndex) templates.add("");
+            if (templates.get(existingIndex).isEmpty() && catchupSource != null && !catchupSource.isEmpty())
+                templates.set(existingIndex, catchupSource);
+            return;
+        }
+
+        urls.add(url);
+        templates.add(catchupSource == null ? "" : catchupSource);
+    }
+
+    public static JsonArray live2JsonArray(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> channels,
+                                           LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> catchupSources) {
+        JsonArray result = new JsonArray();
+        for (String groupName : channels.keySet()) {
+            JsonArray channelArray = new JsonArray();
+            LinkedHashMap<String, ArrayList<String>> channelGroup = channels.get(groupName);
+            LinkedHashMap<String, ArrayList<String>> catchupGroup = catchupSources.get(groupName);
+            if (!channelGroup.isEmpty()) {
+                for (String channelName : channelGroup.keySet()) {
+                    ArrayList<String> urls = channelGroup.get(channelName);
+                    if (urls.isEmpty()) continue;
+
+                    JsonArray urlArray = new JsonArray();
+                    JsonArray catchupArray = new JsonArray();
+                    ArrayList<String> templates = catchupGroup == null ? null : catchupGroup.get(channelName);
+                    for (int i = 0; i < urls.size(); i++) {
+                        urlArray.add(urls.get(i));
+                        catchupArray.add(templates != null && i < templates.size() ? templates.get(i) : "");
                     }
+
+                    JsonObject channel = new JsonObject();
+                    channel.addProperty("name", channelName);
+                    channel.add("urls", urlArray);
+                    channel.add("catchupSources", catchupArray);
+                    channelArray.add(channel);
                 }
-                JsonObject jsonobj2 = new JsonObject();
-                try {
-                    jsonobj2.addProperty("group", str);
-                    jsonobj2.add("channels", jsonarr2);
-                } catch (Throwable e) {
-                }
-                jsonarr.add(jsonobj2);
+
+                JsonObject group = new JsonObject();
+                group.addProperty("group", groupName);
+                group.add("channels", channelArray);
+                result.add(group);
             }
         }
-        return jsonarr;
+        return result;
     }
 }

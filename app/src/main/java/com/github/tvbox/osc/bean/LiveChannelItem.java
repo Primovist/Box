@@ -21,6 +21,7 @@ public class LiveChannelItem {
     private String channelName;
     private ArrayList<String> channelSourceNames;
     private ArrayList<String> channelUrls;
+    private ArrayList<String> catchupSources;
     public int sourceIndex = 0;
     public int sourceNum = 0;
     public boolean include_back = false;
@@ -66,6 +67,17 @@ public class LiveChannelItem {
         this.channelUrls = channelUrls;
         sourceNum = channelUrls.size();
     }
+
+    public void setChannelCatchupSources(ArrayList<String> catchupSources) {
+        this.catchupSources = catchupSources == null ? new ArrayList<String>() : catchupSources;
+    }
+
+    public String getCatchupSource() {
+        if (catchupSources == null || sourceIndex < 0 || sourceIndex >= catchupSources.size()) return "";
+        String source = catchupSources.get(sourceIndex);
+        return source == null ? "" : source;
+    }
+
     public void preSource() {
         sourceIndex--;
         if (sourceIndex < 0) sourceIndex = sourceNum - 1;

@@ -13,6 +13,7 @@ import com.github.tvbox.osc.ui.tv.widget.AudioWaveView;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.TimeZone;
 
 public class LiveEpgAdapter extends BaseQuickAdapter<Epginfo, BaseViewHolder> {
     private int selectedEpgIndex = -1;
@@ -26,6 +27,7 @@ public class LiveEpgAdapter extends BaseQuickAdapter<Epginfo, BaseViewHolder> {
 
     public LiveEpgAdapter() {
         super(R.layout.item_epglist, new ArrayList<>());
+        timeFormat.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
     }
 
     public void CanBack(Boolean source_include_back) {
@@ -111,11 +113,12 @@ public class LiveEpgAdapter extends BaseQuickAdapter<Epginfo, BaseViewHolder> {
     }
 
     public void setShiyiSelection(int i, boolean t, String currentEpgDate) {
+        int previousIndex = this.selectedEpgIndex;
         this.selectedEpgIndex = i;
         this.shiyiDate = t ? currentEpgDate : null;
         ShiyiSelection = t;
-        notifyItemChanged(this.selectedEpgIndex);
-
+        if (previousIndex >= 0) notifyItemChanged(previousIndex);
+        if (i >= 0 && i != previousIndex) notifyItemChanged(i);
     }
 
     public int getSelectedIndex() {

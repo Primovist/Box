@@ -457,7 +457,7 @@ public class ApiConfig {
                         System.out.println("Live URL :" + extUrlFix);
                         putLiveHistory(extUrlFix);
                         // Overwrite with Live URL from Settings
-                        if (StringUtils.isBlank(liveURL)) {
+                        if (StringUtils.isBlank(liveURL) || !Hawk.get(HawkConfig.LIVE_URL_OVERRIDE, false)) {
                             Hawk.put(HawkConfig.LIVE_URL, extUrlFix);
                         } else {
                             extUrlFix = liveURL;
@@ -477,7 +477,7 @@ public class ApiConfig {
                         System.out.println("EPG URL :" + epg);
                         putEPGHistory(epg);
                         // Overwrite with EPG URL from Settings
-                        if (StringUtils.isBlank(epgURL)) {
+                        if (StringUtils.isBlank(epgURL) || !Hawk.get(HawkConfig.EPG_URL_OVERRIDE, false)) {
                             Hawk.put(HawkConfig.EPG_URL, epg);
                         } else {
                             Hawk.put(HawkConfig.EPG_URL, epgURL);
@@ -507,7 +507,7 @@ public class ApiConfig {
                                 System.out.println("EPG URL :" + epg);
                                 putEPGHistory(epg);
                                 // Overwrite with EPG URL from Settings
-                                if (StringUtils.isBlank(epgURL)) {
+                                if (StringUtils.isBlank(epgURL) || !Hawk.get(HawkConfig.EPG_URL_OVERRIDE, false)) {
                                     Hawk.put(HawkConfig.EPG_URL, epg);
                                 } else {
                                     Hawk.put(HawkConfig.EPG_URL, epgURL);
@@ -519,7 +519,7 @@ public class ApiConfig {
                                 System.out.println("Live URL :" + url);
                                 putLiveHistory(url);
                                 // Overwrite with Live URL from Settings
-                                if (StringUtils.isBlank(liveURL)) {
+                                if (StringUtils.isBlank(liveURL) || !Hawk.get(HawkConfig.LIVE_URL_OVERRIDE, false)) {
                                     Hawk.put(HawkConfig.LIVE_URL, url);
                                 } else {
                                     url = liveURL;
@@ -712,6 +712,7 @@ public class ApiConfig {
                 liveChannelItem.setChannelIndex(channelIndex++);
                 liveChannelItem.setChannelNum(++channelNum);
                 ArrayList<String> urls = DefaultConfig.safeJsonStringList(obj, "urls");
+                ArrayList<String> catchupSources = DefaultConfig.safeJsonStringList(obj, "catchupSources");
                 ArrayList<String> sourceNames = new ArrayList<>();
                 ArrayList<String> sourceUrls = new ArrayList<>();
                 int sourceIndex = 1;
@@ -726,6 +727,7 @@ public class ApiConfig {
                 }
                 liveChannelItem.setChannelSourceNames(sourceNames);
                 liveChannelItem.setChannelUrls(sourceUrls);
+                liveChannelItem.setChannelCatchupSources(catchupSources);
                 liveChannelGroup.getLiveChannels().add(liveChannelItem);
             }
             liveChannelGroupList.add(liveChannelGroup);

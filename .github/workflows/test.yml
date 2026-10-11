@@ -1,31 +1,87 @@
-name: Test Build
+name: Build Release APK
 
 on:
-#  push:
-#    branches:
-#      - main
-#  pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Build With Gradle
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Verify signing key
+        run: echo "d467eb24075d24a0349e89121b02fa5d17225303f8ecdd0874ca4990fa6b01fa  .github/workflows/TVBoxOSC.jks" | sha256sum --check
+
+      - name: Build arm64 generic Java Release APK
         run: |
           chmod +x gradlew
-          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all
-      - name: Prepare App
+          ./gradlew assembleArm64GenericNormalRelease --no-daemon --build-cache --stacktrace \
+            -PTVBOX_RELEASE_STORE_FILE=.github/workflows/TVBoxOSC.jks \
+            -PTVBOX_RELEASE_STORE_PASSWORD=TVBoxOSC \
+            -PTVBOX_RELEASE_KEY_ALIAS=TVBoxOSC \
+            -PTVBOX_RELEASE_KEY_PASSWORD=TVBoxOSC
+
+      - name: Verify and prepare APK
+        shell: bash
         run: |
-          mkdir -p ${{ github.workspace }}/apk/
-          for file in `find ~ -name "*.apk" -print`; do
-            mv "$file" ${{ github.workspace }}/apk/
-          done
-      - name: Upload App To Artifact
-        uses: actions/upload-artifact@v3
+          set -euo pipefail
+          apk_path="$(find app/build/outputs/apk -type f -name 'TVBox_release-arm64-generic-java.apk' -print -quit)"
+          if [[ -z "$apk_path" ]]; then
+            echo "Expected arm64 generic Java APK was not produced" >&2
+            exit 1
+          fi
+
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "Android SDK path is unavailable" >&2
+            exit 1
+          fi
+          build_tools="$(find "$sdk_root/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
+          apksigner="$build_tools/apksigner"
+          aapt="$build_tools/aapt"
+          [[ -x "$apksigner" && -x "$aapt" ]]
+
+          mkdir -p artifact
+          cp "$apk_path" artifact/
+          apk="artifact/$(basename "$apk_path")"
+          signer_output="$("$apksigner" verify --verbose --print-certs "$apk" 2>&1)"
+          printf '%s\n' "$signer_output"
+          signer_digest="$(printf '%s\n' "$signer_output" | sed -n 's/.*SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          expected_digest='4B9421DE6D46778F6280B180179413FA6973845F0A0132C00F6800C06464E051'
+          if [[ "$signer_digest" != "$expected_digest" ]]; then
+            echo "APK signing certificate does not match the original release certificate" >&2
+            exit 1
+          fi
+
+          badging="$("$aapt" dump badging "$apk")"
+          printf '%s\n' "$badging" | grep -q "package: name='com.github.tvbox.osc.tk' versionCode='1'"
+          printf '%s\n' "$badging" | head -n 1
+          (cd artifact && sha256sum "$(basename "$apk_path")" > SHA256SUMS)
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "applicationId=com.github.tvbox.osc.tk"
+            echo "versionCode=1"
+            echo "variant=arm64-generic-java-release"
+            echo "certificateSha256=$signer_digest"
+          } > artifact/build-info.txt
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: com.github.tvbox.osc
-          path: ${{ github.workspace }}/apk/*
+          name: box-arm64-generic-java-release
+          path: artifact/*
+          if-no-files-found: error

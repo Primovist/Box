@@ -7,6 +7,11 @@ def static buildTime() {
     return new Date().format("yyyyMMdd_HHmm", TimeZone.getTimeZone("GMT+08:00"))
 }
 
+def releaseStoreFile = project.findProperty("TVBOX_RELEASE_STORE_FILE") ?: ".github/workflows/TVBoxOSC.jks"
+def releaseStorePassword = project.findProperty("TVBOX_RELEASE_STORE_PASSWORD") ?: "TVBoxOSC"
+def releaseKeyAlias = project.findProperty("TVBOX_RELEASE_KEY_ALIAS") ?: "TVBoxOSC"
+def releaseKeyPassword = project.findProperty("TVBOX_RELEASE_KEY_PASSWORD") ?: "TVBoxOSC"
+
 android {
     compileSdk 34
 
@@ -28,10 +33,19 @@ android {
         exclude 'META-INF/DEPENDENCIES'
     }
 
+    signingConfigs {
+        release {
+            storeFile rootProject.file(releaseStoreFile)
+            storePassword releaseStorePassword
+            keyAlias releaseKeyAlias
+            keyPassword releaseKeyPassword
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
-
+            signingConfig signingConfigs.release
         }
     }
 

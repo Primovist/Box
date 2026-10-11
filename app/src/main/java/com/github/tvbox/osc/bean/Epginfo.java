@@ -12,6 +12,7 @@ public class Epginfo {
     public int datestart;
     public int dateend;
     public String title;
+    public boolean isPlaceholder = false;
     public String originStart;
     public String originEnd;
     public String start;
@@ -23,6 +24,7 @@ public class Epginfo {
 
     public Epginfo(Date Date, String str, Date date, String str1, String str2, int pos) {
         epgDate = Date;
+        timeFormat.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
         currentEpgDate = timeFormat.format(epgDate);
         title = str;
         originStart = str1;
@@ -35,6 +37,7 @@ public class Epginfo {
         startdateTime = userSimpleDateFormat.parse(simpleDateFormat.format(date) + " " + str1 + ":00 GMT+8:00", new ParsePosition(0));
         enddateTime = userSimpleDateFormat.parse(simpleDateFormat.format(date) + " " + str2 + ":00 GMT+8:00", new ParsePosition(0));
         SimpleDateFormat zoneFormat = new SimpleDateFormat("HH:mm");
+        zoneFormat.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
         start = zoneFormat.format(startdateTime);
         end = zoneFormat.format(enddateTime);
         datestart = Integer.parseInt(start.replace(":", ""));
