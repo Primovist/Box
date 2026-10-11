@@ -14,7 +14,8 @@ android {
             pip {
                 install "lxml"
                 install "ujson"
-                install "pyquery"
+                install "pyquery==2.0.1"
+                install "cssselect==1.2.0"
                 install "requests"
                 install "jsonpath"
                 install "cachetools"
